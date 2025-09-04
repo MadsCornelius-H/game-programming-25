@@ -26,8 +26,12 @@ int main(void)
 	SDL_Time walltime_frame_beg;
 	SDL_Time walltime_work_end;
 	SDL_Time walltime_frame_end = 0;
-	SDL_Time time_elapsed_frame;
+	SDL_Time time_elapsed_frame = 1;
 	SDL_Time time_elapsed_work;
+	SDL_Time currentTime;
+
+
+	int move_speed = 10; // pixels per second
 
 	int delay_type = 0;
 
@@ -38,12 +42,17 @@ int main(void)
 	player_rect.x = window_w / 2 - player_size / 2;
 	player_rect.y = window_h / 2 - player_size / 2;
 
-
+	
 	bool btn_pressed_up = false;
+
+	double t = 0.0;
+    const double dt = 0.01;
+    double accumulator = 0.0;
 
 	SDL_GetCurrentTime(&walltime_frame_beg);
 	while(!quit)
 	{
+
 		// input
 		SDL_Event event;
 		while(SDL_PollEvent(&event))
@@ -54,6 +63,29 @@ int main(void)
 					quit = true;
 					break;
 				case SDL_EVENT_KEY_DOWN:
+					switch (event.key.key)
+					{
+					case SDLK_UP:
+						player_rect.y -= move_speed;
+						/* code */
+						break;
+					case SDLK_RIGHT:
+						player_rect.x += move_speed;
+						/* code */
+						break;
+					case SDLK_DOWN:
+						player_rect.y += move_speed;
+						/* code */
+						break;
+					case SDLK_LEFT:
+						player_rect.x -= move_speed;
+						/* code */
+						break;
+					
+					default:
+						break;
+					}
+
 					if(event.key.key >= SDLK_0 && event.key.key < SDLK_5)
 						delay_type = event.key.key - SDLK_0;
 					break;
