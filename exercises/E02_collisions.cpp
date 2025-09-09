@@ -15,14 +15,12 @@
 #define TARGET_FRAMERATE SECONDS(1) / 60
 #define WINDOW_W 1200
 #define WINDOW_H 1200
-
-#define ASTOROIDS_CREATED 30
+#define WINDOW_MID_W WINDOW_W / 2
+#define WINDOW_MID_H WINDOW_H / 2
 
 #define ENTITY_COUNT 4096
+#define ASTEROIDS_CREATED 2300
 #define MAX_COLLISIONS 1024   // num max collisions per frame
-// Define QUADRANT as an array of arrays of Entity pointers
-#define QUADRANT_COUNT 4
-
 
 bool DEBUG_separate_collisions   = true;
 bool DEBUG_render_colliders      = true;
@@ -51,10 +49,22 @@ struct SDLContext
 struct GameState
 {
 	Entity* player;
+	Entity* entities;
 
 	// game-allocated memory
-	Entity* entities;
+	// Entity* entities;
 	int entities_alive_count;
+
+	// location based separation
+	Entity** topleft_quadrant;
+	Entity** topright_quadrant;
+	Entity** bottomleft_quadrant;
+	Entity** bottomright_quadrant;
+
+	int topleft_count;
+    int topright_count;
+    int bottomleft_count;
+    int bottomright_count;
 
 	EntityCollisionInfo* frame_collisions;
 	int frame_collisions_count;
@@ -121,13 +131,13 @@ struct Entity
 	vec2f size;
 
 	Sprite sprite;
-	bool is_static;
+
 	// collider info
+	bool is_static;
+	vec2f min_vals;
+	vec2f max_vals;
 	float collider_radius;
 	vec2f collider_offset;
-	vec2f min_position;
-	vec2f max_position;
-
 };
 
 static Entity* entity_create(GameState* state)
@@ -138,6 +148,7 @@ static Entity* entity_create(GameState* state)
 	// // concise version
 	//return &state->entities[state->entities_alive_count++];
 
+
 	Entity* ret = &state->entities[state->entities_alive_count];
 	++state->entities_alive_count;
 
@@ -145,14 +156,14 @@ static Entity* entity_create(GameState* state)
 }
 
 // NOTE: this only works if nobody holds references to other entities!
-static void entity_destroy(GameState* state, Entity* entity)
-{
-	// NOTE: here we want to fail hard, nobody should pass us a pointer not gotten from `entity_create()`
-	SDL_assert(entity < state->entities || entity > state->entities + ENTITY_COUNT);
+// static void entity_destroy(GameState* state, Entity* entity)
+// {
+// 	// NOTE: here we want to fail hard, nobody should pass us a pointer not gotten from `entity_create()`
+// 	SDL_assert(entity < state->entities || entity > state->entities + ENTITY_COUNT);
 
-	--state->entities_alive_count;
-	*entity = state->entities[state->entities_alive_count];
-}
+// 	--state->entities_alive_count;
+// 	*entity = state->entities[state->entities_alive_count];
+// }
 // ********************************************************************************************************************
 // collisions
 // ********************************************************************************************************************
@@ -166,26 +177,37 @@ struct EntityCollisionInfo
 	float separation;
 };
 
-static void collision_check(GameState* state)
-{
-	state->frame_collisions_count = 0;
-	for(int i = 0; i < state->entities_alive_count - 1; ++i)
+static void quadrant_collisions(GameState* state, Entity** quadrant, int count, int colour_nr){
+
+	for(int i = 0; i < count - 1; ++i)
 	{
-		Entity* e1 = &state->entities[i];
+		Entity* e1 = quadrant[i];
 		
-		for(int j = i + 1; j < state->entities_alive_count; ++j)
+		for(int j = i + 1; j < count; ++j)
 		{
-			Entity* e2 = &state->entities[j];
-			if(e1->is_static && e2->is_static){
-				continue;
-			}
+			Entity* e2 = quadrant[j];
+			if (e1->is_static && e2->is_static) continue;
 			if(itu_lib_overlaps_circle_circle(
 				e1->position + e1->collider_offset, e1->collider_radius,
 				e2->position + e2->collider_offset, e2->collider_radius
 			))
 			{
-				e1->sprite.tint = COLOR_RED;
-				e2->sprite.tint = COLOR_RED;
+				if (colour_nr == 0){
+					e1->sprite.tint = COLOR_RED;
+					e2->sprite.tint = COLOR_RED;
+				}
+				if (colour_nr == 1){
+					e1->sprite.tint = COLOR_BLUE;
+					e2->sprite.tint = COLOR_BLUE;
+				}
+				if (colour_nr == 2){
+					e1->sprite.tint = COLOR_GREEN;
+					e2->sprite.tint = COLOR_GREEN;
+				}
+				if (colour_nr == 3){
+					e1->sprite.tint = COLOR_YELLOW;
+					e2->sprite.tint = COLOR_YELLOW;
+				}
 
 				if(state->frame_collisions_count >= MAX_COLLISIONS)
 				{
@@ -206,6 +228,15 @@ static void collision_check(GameState* state)
 			}
 		}
 	}
+}
+
+static void collision_check(GameState* state)
+{
+	state->frame_collisions_count = 0;
+	quadrant_collisions(state, state->topleft_quadrant, state->topleft_count, 0);
+	quadrant_collisions(state, state->topright_quadrant, state->topright_count, 1);
+	quadrant_collisions(state, state->bottomleft_quadrant, state-> bottomleft_count, 2);
+	quadrant_collisions(state, state->bottomright_quadrant, state->bottomright_count, 3);	
 }
 
 static void collision_separate(GameState* state)
@@ -233,6 +264,14 @@ static void game_init(SDLContext* context, GameState* state)
 
 		state->frame_collisions = (EntityCollisionInfo*)SDL_malloc(MAX_COLLISIONS * sizeof(EntityCollisionInfo));
 		SDL_assert(state->frame_collisions);
+
+		state->topleft_quadrant = (Entity**)SDL_malloc(ENTITY_COUNT * sizeof(Entity*));
+		state->topright_quadrant = (Entity**)SDL_malloc(ENTITY_COUNT * sizeof(Entity*));
+		state->bottomleft_quadrant = (Entity**)SDL_malloc(ENTITY_COUNT * sizeof(Entity*));
+		state->bottomright_quadrant = (Entity**)SDL_malloc(ENTITY_COUNT * sizeof(Entity*));
+
+		state->topleft_count = state->topright_count = 0;
+		state->bottomleft_count = state->bottomright_count = 0;
 	}
 
 	// texture atlasesw
@@ -245,13 +284,19 @@ static void game_reset(SDLContext* context, GameState* state)
 	SDL_memset(state->entities, 0, ENTITY_COUNT * sizeof(Entity));
 	state->entities_alive_count = 0;
 
+	SDL_memset(state->topleft_quadrant, 0, ENTITY_COUNT * sizeof(Entity*));
+	SDL_memset(state->topright_quadrant, 0, ENTITY_COUNT * sizeof(Entity*));
+	SDL_memset(state->bottomleft_quadrant, 0, ENTITY_COUNT * sizeof(Entity*));
+	SDL_memset(state->bottomright_quadrant, 0, ENTITY_COUNT * sizeof(Entity*));
+
 	// entities
 	Entity* player = entity_create(state);
 	// we always have a player. This should also always be the first entity created, so it should never fail
 	SDL_assert(player);
-	player->position.x = (float)context->window_w / 2;
-	player->position.y = (float)context->window_h / 2;
+	player->position.x = (float)context->window_w / 4;
+    player->position.y = (float)context->window_h / 4;
 	player->size = vec2f{ 64, 64 };
+	player->is_static = false;
 	player->sprite = {
 		.texture = state->atlas,
 		.rect = SDL_FRect{ 0, 0, 128, 128 },
@@ -259,17 +304,14 @@ static void game_reset(SDLContext* context, GameState* state)
 		.pivot = vec2f{ 0.5f, 0.5f }
 	};
 	player->collider_radius = 16;
-	player->is_static = false;
-	player->min_position.x = player->collider_radius;
-	player->min_position.y = player->collider_radius;
-	player->max_position.x = WINDOW_W-player->collider_radius;
-	player->max_position.y = WINDOW_H-player->collider_radius;
-
-
+	player->min_vals.x = player->collider_radius;
+	player->min_vals.y = player->collider_radius;
+	player->max_vals.x = WINDOW_W-player->collider_radius;
+	player->max_vals.y = WINDOW_H-player->collider_radius;
 	state->player = player;
 
 	// grid pattern
-	for(int i = 0; i < ASTOROIDS_CREATED; ++i)
+	for(int i = 0; i < ASTEROIDS_CREATED; ++i)
 	{
 		Entity* entity = entity_create(state);
 		if(!entity)
@@ -278,8 +320,9 @@ static void game_reset(SDLContext* context, GameState* state)
 			break;
 		}
 		
-		vec2f coords = vec2f{ 1.5f + i % 7, 1.5f + i /7};
+		vec2f coords = vec2f{ 5.5f + i % 10, 5.5f + i /10};
 		entity->size = vec2f{ 32, 32 };
+		entity->is_static = false;
 		entity->position = mul_element_wise(entity->size,  coords);
 		entity->sprite = {
 			.texture = state->atlas,
@@ -287,19 +330,21 @@ static void game_reset(SDLContext* context, GameState* state)
 			.tint = COLOR_WHITE,
 			.pivot = vec2f{ 0.5f, 0.5f }
 		};
-		entity->is_static = false;
-
 		entity->collider_radius = 16;
-		entity->min_position.x = entity->collider_radius;
-		entity->min_position.y = entity->collider_radius;
-		entity->max_position.x = WINDOW_W-entity->collider_radius;
-		entity->max_position.y = WINDOW_H-entity->collider_radius;
-
+		entity->min_vals.x = entity->collider_radius;
+		entity->min_vals.y = entity->collider_radius;
+		entity->max_vals.x = WINDOW_W-entity->collider_radius;
+		entity->max_vals.y = WINDOW_H-entity->collider_radius;
 	}
 }
 
 static void game_update(SDLContext* context, GameState* state)
 {
+	state->topleft_count = 0;
+	state->topright_count = 0;
+	state->bottomleft_count = 0;
+	state->bottomright_count = 0;
+
 	vec2f mov = { 0 };
 	if(context->btn_isdown_up)
 		mov.y -= 1;
@@ -313,20 +358,42 @@ static void game_update(SDLContext* context, GameState* state)
 	vec2f velocity = normalize(mov) * (128 * context->delta);
 	state->player->position = state->player->position + velocity;
 
-	// reset tint
+	// reset tint and make sure entity doesn't exit window
 	for(int i = 0; i < state->entities_alive_count; ++i)
 	{
-		
 		Entity* entity = &state->entities[i];
+
+		// Entity* entity = &state->entities[i];
 		entity->sprite.tint = COLOR_WHITE;
 
+		// Make sure object cant leave screen
 		vec2f position = entity->position;
+		if (position.x < entity->min_vals.x) entity->position.x = entity->min_vals.x;
+		if (position.x > entity->max_vals.x) entity->position.x = entity->max_vals.x;
+		if (position.y < entity->min_vals.y) entity->position.y = entity->min_vals.y;
+		if (position.y > entity->max_vals.y) entity->position.y = entity->max_vals.y;
 
-		if (position.x <= entity->min_position.x) entity->position.x = entity->min_position.x;
-		if (position.x >= entity->max_position.x) entity->position.x = entity->max_position.x;
-		if (position.y <= entity->min_position.y) entity->position.y = entity->min_position.y;
-		if (position.y >= entity->max_position.y) entity->position.y = entity->max_position.y;
+		float left   = entity->position.x - entity->collider_radius;
+		float right  = entity->position.x + entity->collider_radius;
+		float top    = entity->position.y - entity->collider_radius;
+		float bottom = entity->position.y + entity->collider_radius;
 
+		bool in_left   = (left   < WINDOW_MID_W);
+		bool in_right  = (right  > WINDOW_MID_W);
+		bool in_top    = (top    < WINDOW_MID_H);
+		bool in_bottom = (bottom > WINDOW_MID_H);
+
+		if (in_left && in_top)
+		    state->topleft_quadrant[state->topleft_count++] = entity;
+
+		if (in_right && in_top)
+		    state->topright_quadrant[state->topright_count++] = entity;
+
+		if (in_left && in_bottom)
+		    state->bottomleft_quadrant[state->bottomleft_count++] = entity;
+
+		if (in_right && in_bottom)
+		    state->bottomright_quadrant[state->bottomright_count++] = entity;
 
 	}
 
@@ -378,7 +445,7 @@ int main(void)
 	// increase the zoom to make debug text more legible
 	// (ie, on the class projector, we will usually use 2)
 	{
-		context.zoom = 2;
+		context.zoom = 1;
 		context.window_w /= context.zoom;
 		context.window_h /= context.zoom;
 		SDL_SetRenderScale(context.renderer, context.zoom, context.zoom);
@@ -456,13 +523,12 @@ int main(void)
 			SDL_FRect rect = SDL_FRect{ 5, 5, 225, 65 };
 			SDL_RenderFillRect(context.renderer, &rect);
 			SDL_SetRenderDrawColor(context.renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-			SDL_RenderDebugTextFormat(context.renderer, 10, 20, "work: %9.6f ms/f", (float)elapsed_work  / (float)MILLIS(1));
-			SDL_RenderDebugTextFormat(context.renderer, 10, 30, "tot : %9.6f ms/f", (float)elapsed_frame / (float)MILLIS(1));
-			SDL_RenderDebugTextFormat(context.renderer, 10, 40, "[TAB] reset ");
-			SDL_RenderDebugTextFormat(context.renderer, 10, 50, "[F1]  collisions        %s", DEBUG_separate_collisions   ? " ON" : "OFF");
-			SDL_RenderDebugTextFormat(context.renderer, 10, 60, "[F2]  render colliders  %s", DEBUG_render_colliders      ? " ON" : "OFF");
-			SDL_RenderDebugTextFormat(context.renderer, 10, 70, "[F3]  render tex border %s", DEBUG_render_texture_border ? " ON" : "OFF");
+			SDL_RenderDebugTextFormat(context.renderer, 10, 10, "work: %9.6f ms/f", (float)elapsed_work  / (float)MILLIS(1));
+			SDL_RenderDebugTextFormat(context.renderer, 10, 20, "tot : %9.6f ms/f", (float)elapsed_frame / (float)MILLIS(1));
+			SDL_RenderDebugTextFormat(context.renderer, 10, 30, "[TAB] reset ");
+			SDL_RenderDebugTextFormat(context.renderer, 10, 40, "[F1]  collisions        %s", DEBUG_separate_collisions   ? " ON" : "OFF");
+			SDL_RenderDebugTextFormat(context.renderer, 10, 50, "[F2]  render colliders  %s", DEBUG_render_colliders      ? " ON" : "OFF");
+			SDL_RenderDebugTextFormat(context.renderer, 10, 60, "[F3]  render tex border %s", DEBUG_render_texture_border ? " ON" : "OFF");
 		}
 #endif
 
