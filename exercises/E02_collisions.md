@@ -23,8 +23,15 @@ Starting from the live-coding example, let's crank up the number of entities and
 Some optimizations to try:
 - static colliders
 	- add the ability to mark entities as "static". We could either store them in a different array or mark them with a boolean, we'll go with the boolean (less performant but requires less scaffolding. The important thing is to break the nasty quadratic loop we have.
+		
+	We added boolean to define a static option to the astorides and player
+
 	- how does this optimization affect separation? Would that make sense for a game? What if you prevent the static entity from moving?
+
+	Our performance went from 200+ ms to 38 ms. it makes senses if staic objcts can never colide but in termes of our game where astroids can it might be a problem
+
 	- did this fix our framerate problem? How many entities with static collision can you spawn before you exhaust your 16.6ms/f buget? How many to hit the previous 200/300 baseline?
+yes, around the 3000 astroids
 - world partition
 	- set back the asteroid entities to dynamic colliders (tune down entity number appropriately) and decrease their size (both collider and texture) so that they fit on the screen
 	- since we don't have a camera system yet, out "game world" is pretty limited. Add a check for all entities in `game_update` and clamp their position so that they don't exit the window
