@@ -9,9 +9,11 @@ FILE(COPY data DESTINATION ${CMAKE_BINARY_DIR})
 # 3rd party libraries
 add_subdirectory(lib/SDL)
 include_directories(lib/stb)
+include_directories(lib/itu)
 
 # repo's executables
 add_subdirectory(examples)
 add_subdirectory(playground)
 add_subdirectory(exercises)
 add_subdirectory(exercises_solutions)
+add_subdirectory(live_coding)
