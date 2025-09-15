@@ -22,10 +22,8 @@ Starting from the live-coding example, let's crank up the number of entities and
 
 Some optimizations to try:
 - static colliders
-	- add the ability to mark entities as "static". We could either store them in a different array or mark them with a boolean, we'll go with the boolean (less performant but requires less scaffolding. The important thing is to break the nasty quadratic loop we have.
-		
+	- add the ability to mark entities as "static". We could either store them in a different array or mark them with a boolean, we'll go with the boolean (less performant but requires less scaffolding. The important thing is to break the nasty quadratic loop we have.)
 	We added boolean to define a static option to the astorides and player
-
 	- how does this optimization affect separation? Would that make sense for a game? What if you prevent the static entity from moving?
 
 	Our performance went from 200+ ms to 38 ms. it makes senses if staic objcts can never colide but in termes of our game where astroids can it might be a problem
