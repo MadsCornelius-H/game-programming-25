@@ -5,22 +5,25 @@
 #include <itu_lib_engine.hpp>
 #include <itu_lib_render.hpp>
 #include <itu_lib_sprite.hpp>
+#include <itu_lib_overlaps.hpp>
+
 
 #define ENABLE_DIAGNOSTICS
 
 #define TARGET_FRAMERATE SECONDS(1) / 60
-#define WINDOW_W         800
-#define WINDOW_H         600
+#define WINDOW_W         1200
+#define WINDOW_H         1200
 
 #define ENTITY_COUNT 4096
 
-#define PIXELS_PER_UNIT 128
+#define PIXELS_PER_UNIT 16
 
 bool DEBUG_render_textures = true;
 bool DEBUG_render_outlines = true;
 
 struct Entity
 {
+	bool is_tile;
 	Sprite sprite;
 	Transform transform;
 };
@@ -75,40 +78,113 @@ static void game_init(SDLContext* context, GameState* state)
 	// TODO allocate space for tile info (when we'll load those from file)
 
 	// texture atlases
-	state->atlas = texture_create(context, "data/kenney/simpleSpace_tilesheet_2.png", SDL_SCALEMODE_LINEAR);
+	state->atlas = texture_create(context, "data/kenney/tiny_dungeon_packed.png", SDL_SCALEMODE_NEAREST);
 	state->bg    = texture_create(context, "data/kenney/prototype_texture_dark/texture_13.png", SDL_SCALEMODE_LINEAR);
 }
+
+
 
 static void game_reset(SDLContext* context, GameState* state)
 {
 	state->entities_alive_count = 0;
 	// entities
+	// {
+	// 	Entity* bg = entity_create(state);
+	// 	SDL_FRect sprite_rect = SDL_FRect{ 0, 0, 1024, 1024};
+	// 	itu_lib_sprite_init(&bg->sprite, state->bg, sprite_rect);
+	// 	bg->transform.scale = VEC2F_ONE * 8;
+	// }
+
+	int tiles = 16;
+	// grid pattern
+	for(float x = -4; x < tiles; ++x)
 	{
-		Entity* bg = entity_create(state);
-		SDL_FRect sprite_rect = SDL_FRect{ 0, 0, 1024, 1024};
-		itu_lib_sprite_init(&bg->sprite, state->bg, sprite_rect);
-		bg->transform.scale = VEC2F_ONE * 8;
+
+		for(float y = -4; y < tiles; ++y){
+			Entity* entity = entity_create(state);
+			if(!entity)
+			{
+				SDL_Log("[WARNING] too many entity spawned!");
+				break;
+			}
+			
+			
+			entity->is_tile = true;
+			entity->sprite = {
+			.texture = state->atlas,
+			.rect = { (float)(rand()%1), (float)(rand()%3), 16, 16 },
+			.tint = COLOR_RED
+			};
+		
+			itu_lib_sprite_init(&entity->sprite, entity->sprite.texture, itu_lib_sprite_get_rect(entity->sprite.rect.x, entity->sprite.rect.y,entity->sprite.rect.w,entity->sprite.rect.h));
+			entity->transform.scale = VEC2F_ONE;
+			entity->transform.position = vec2f{x+0.5f,y+0.5f};
+		}
+		
+
+
+		
 	}
 
+	
 	{
 		state->player = entity_create(state);
+		state->player->is_tile = false;
 		state->player->transform.position = VEC2F_ZERO;
 		state->player->transform.scale = VEC2F_ONE;
 		itu_lib_sprite_init(
 			&state->player->sprite,
 			state->atlas,
-			itu_lib_sprite_get_rect(0, 1, 128, 128)
+			itu_lib_sprite_get_rect(0, 9, 16, 16)
 		);
 
 		// raise sprite a bit, so that the position concides with the center of the image
-		state->player->sprite.pivot.y = 0.3f;
+		//state->player->sprite.pivot.y = 0.3f;
 	}
+
+
+	
+}
+static void collision_check(GameState* state, SDLContext* context)
+{
+
+    for(int i = 0; i <= state->entities_alive_count - 1; ++i){
+        Entity* current_entity = &state->entities[i];
+		
+
+
+        if(!current_entity->is_tile){
+			continue;
+		}
+		current_entity->sprite.tint = COLOR_WHITE;
+		
+		if (itu_lib_overlaps_point_rect(
+			context->mouse_pos, 
+			current_entity->transform.position-0.5f,
+			current_entity->transform.position+0.5f)){
+
+			current_entity->sprite.tint = COLOR_RED;
+
+		}
+
+		if (itu_lib_overlaps_rect_rect(
+			state->player->transform.position-0.5f,
+			state->player->transform.position+0.5f,
+			current_entity->transform.position-0.5f,
+			current_entity->transform.position+0.5f)){
+
+			current_entity->sprite.tint = COLOR_BLUE;
+
+		}
+        
+    }
+    // itu_lib_overlaps_rect_rect();
 }
 
 static void game_update(SDLContext* context, GameState* state)
 {
 	{
-		const float player_speed = 1;
+		const float player_speed = 10;
 
 		Entity* entity = state->player;
 		vec2f mov = { 0 };
@@ -125,6 +201,14 @@ static void game_update(SDLContext* context, GameState* state)
 
 		// camera follows player
 		context->camera.position = entity->transform.position;
+
+		// getting the mouse cordinates
+		float x, y;
+		SDL_GetMouseState(&x, &y);
+		context->mouse_pos = point_screen_to_global(&context->camera, vec2f{x,y});
+		
+		collision_check(state,context);
+		
 	}
 }
 
@@ -147,6 +231,7 @@ static void game_render(SDLContext* context, GameState* state)
 	// debug window
 	SDL_SetRenderDrawColor(context->renderer, 0xFF, 0x00, 0xFF, 0xff);
 	SDL_RenderRect(context->renderer, NULL);
+
 }
 
 int main(void)
@@ -173,7 +258,7 @@ int main(void)
 
 	context.camera.size.x = context.window_w / PIXELS_PER_UNIT;
 	context.camera.size.y = context.window_h / PIXELS_PER_UNIT;
-	context.camera.zoom = 1;
+	context.camera.zoom = 8;
 	context.camera.pixels_per_unit = PIXELS_PER_UNIT;
 
 	game_init(&context, &state);
@@ -243,17 +328,25 @@ int main(void)
 		elapsed_frame = walltime_frame_end - walltime_frame_beg;
 		
 #ifdef ENABLE_DIAGNOSTICS
-		{
-			SDL_SetRenderDrawColor(context.renderer, 0x0, 0x00, 0x00, 0xCC);
-			SDL_FRect rect = SDL_FRect{ 5, 5, 225, 55 };
-			SDL_RenderFillRect(context.renderer, &rect);
+		{	
 
+			
+
+			SDL_SetRenderDrawColor(context.renderer, 0x0, 0x00, 0x00, 0xCC);
+			SDL_FRect rect = SDL_FRect{ 5, 5, 280, 100 };
+			SDL_RenderFillRect(context.renderer, &rect);
+			
 			SDL_SetRenderDrawColor(context.renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 			SDL_RenderDebugTextFormat(context.renderer, 10, 10, "work: %9.6f ms/f", (float)elapsed_work  / (float)MILLIS(1));
 			SDL_RenderDebugTextFormat(context.renderer, 10, 20, "tot : %9.6f ms/f", (float)elapsed_frame / (float)MILLIS(1));
 			SDL_RenderDebugTextFormat(context.renderer, 10, 30, "[TAB] reset ");
 			SDL_RenderDebugTextFormat(context.renderer, 10, 40, "[F1]  render textures   %s", DEBUG_render_textures   ? " ON" : "OFF");
 			SDL_RenderDebugTextFormat(context.renderer, 10, 50, "[F2]  render outlines   %s", DEBUG_render_outlines   ? " ON" : "OFF");
+			SDL_RenderDebugTextFormat(context.renderer, 10, 70, "Camera : X :: %4.2f Y :: %4.2f",context.camera.position.x,context.camera.position.y);
+			SDL_RenderDebugTextFormat(context.renderer, 10, 80, "Mouse 	: X :: %4.2f Y :: %4.2f",context.mouse_pos.x,context.mouse_pos.y );
+			vec2f player = point_global_to_screen(&context.camera,state.player->transform.position);
+			SDL_RenderDebugTextFormat(context.renderer, 10, 90, "Screen : X :: %4.2f Y :: %4.2f",player.x,player.y);
+
 		}
 #endif
 		// render
