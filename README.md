@@ -9,7 +9,7 @@ If you don't have an IDE setup, you can follow this quick platform-independent s
 2. download [VSCode](https://code.visualstudio.com/download) and install these two extensions (both of them from Microsoft)
     1. C/C++ Extension Pack 
     2. CMake Tools
-4. clone the exercise repository `git clone --recurse-submodules https://github.com/Chris-Carvelli/game-programming-25.git` 
+4. clone the exercise repository `git clone --recurse-submodules https://github.com/MadsCornelius-H/game-programming-25.git` 
 5. open repository in VSCode
 6. in `Preferences->Settings`, search for `cmake path` and replace the content with the path to your CMake executable (you can find in typing `where cmake` or `which cmake` on the command line)
 7. restart the editor
