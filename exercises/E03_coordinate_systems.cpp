@@ -1,5 +1,5 @@
-#define TEXTURE_PIXELS_PER_UNIT 128
-#define CAMERA_PIXELS_PER_UNIT  128
+#define TEXTURE_PIXELS_PER_UNIT 16
+#define CAMERA_PIXELS_PER_UNIT  16
 
 #include <itu_unity_include.hpp>
 
@@ -203,7 +203,7 @@ static void game_update(SDLContext* context, GameState* state)
 		// getting the mouse cordinates
 		float x, y;
 		SDL_GetMouseState(&x, &y);
-		context->mouse_pos = point_screen_to_global(&context->camera_active, vec2f{x,y});
+		context->mouse_pos = point_screen_to_global(context, vec2f{x,y});
 		
 		collision_check(state,context);
 		
@@ -258,7 +258,7 @@ int main(void)
 	context.camera_default.normalized_screen_size.y = 1.0f;
 	context.camera_default.normalized_screen_offset.x = 0.0f;
 	context.camera_default.normalized_screen_offset.y = 0.0f;
-	context.camera_default.zoom = 1;
+	context.camera_default.zoom = 4;
 	context.camera_default.pixels_per_unit = CAMERA_PIXELS_PER_UNIT;
 
 	camera_set_active(&context, &context.camera_default);
@@ -345,9 +345,9 @@ int main(void)
 			SDL_RenderDebugTextFormat(context.renderer, 10, 30, "[TAB] reset ");
 			SDL_RenderDebugTextFormat(context.renderer, 10, 40, "[F1]  render textures   %s", DEBUG_render_textures   ? " ON" : "OFF");
 			SDL_RenderDebugTextFormat(context.renderer, 10, 50, "[F2]  render outlines   %s", DEBUG_render_outlines   ? " ON" : "OFF");
-			SDL_RenderDebugTextFormat(context.renderer, 10, 70, "Camera : X :: %4.2f Y :: %4.2f",context.camera.position.x,context.camera.position.y);
+			SDL_RenderDebugTextFormat(context.renderer, 10, 70, "Camera : X :: %4.2f Y :: %4.2f",context.camera_active->world_position.x,context.camera_active->world_position.y);
 			SDL_RenderDebugTextFormat(context.renderer, 10, 80, "Mouse 	: X :: %4.2f Y :: %4.2f",context.mouse_pos.x,context.mouse_pos.y );
-			vec2f player = point_global_to_screen(&context.camera,state.player->transform.position);
+			vec2f player = point_global_to_screen(&context,state.player->transform.position);
 			SDL_RenderDebugTextFormat(context.renderer, 10, 90, "Screen : X :: %4.2f Y :: %4.2f",player.x,player.y);
 
 		}
