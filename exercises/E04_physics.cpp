@@ -12,8 +12,8 @@
 //       (you can try it in exercise 04.2, will be discussed in class during exercise review)
 #define TARGET_FRAMERATE_SECS  NS_TO_SECONDS(TARGET_FRAMERATE_NS)
 
-#define WINDOW_W         800
-#define WINDOW_H         600
+#define WINDOW_W         1600
+#define WINDOW_H         900
 
 #define ENTITY_COUNT 1024
 #define GRAVITY      -9.8f
@@ -46,6 +46,11 @@ struct Entity
 	Transform transform;
 	b2BodyId body_id;
 	vec2f    velocity;
+
+	//platform min max positions
+	vec2f min_pos;
+	vec2f max_pos;
+	int dash_cooldown;
 };
 
 typedef struct PlayerData
@@ -66,12 +71,15 @@ typedef struct PlayerData
 
 static float player_dynamic_gravity = -9.8f;
 static float player_dynamic_jump_impulse = 3;
+static float player_dynamic_dash_impulse = 10;
 static float player_dynamic_mov_force = 10;
 
 struct GameState
 {
 	// shortcut references
 	Entity* player;
+
+	Entity* platforms;
 
 	// game-allocated memory
 	Entity* entities;
@@ -176,6 +184,9 @@ static void game_reset(SDLContext* context, GameState* state)
 			itu_lib_sprite_get_rect(0, 9, 16, 16)
 		);
 		entity->sprite.pivot.y = 0;
+		entity->min_pos = vec2f{-1000.0f, -1000.0f};
+		entity->max_pos = vec2f{1000.0f, 1000.0f};
+		entity->dash_cooldown = 120;
 
 		// box2d body, shape and polygon
 		{
@@ -185,7 +196,7 @@ static void game_reset(SDLContext* context, GameState* state)
 			b2BodyDef body_def = b2DefaultBodyDef();
 			body_def.type = b2_dynamicBody;
 			body_def.fixedRotation = true;
-			body_def.position = b2Vec2{ 0, 0 };
+			body_def.position = b2Vec2{ 0, -1 };
 
 			b2ShapeDef shape_def = b2DefaultShapeDef();
 			shape_def.density = 1; // NOTE: default density of 0 will mess with collisions and gravity!
@@ -218,6 +229,26 @@ static void game_reset(SDLContext* context, GameState* state)
 		b2CreatePolygonShape(entity->body_id, &shape_def, &polygon);
 	}
 
+	// Create moving platform
+	{
+		b2BodyDef body_def = b2DefaultBodyDef();
+		body_def.type = b2_kinematicBody;
+		body_def.position = b2Vec2{ 1, 0 };
+		b2ShapeDef shape_def = b2DefaultShapeDef();
+
+		shape_def.filter.categoryBits = COLLISION_FILTER_GROUND;
+		b2Polygon polygon = b2MakeBox(5.0f, 0.3f);
+
+		Entity* entity = entity_create(state);
+		entity->velocity = vec2f{2.0f, 3.0f};
+		entity->body_id = b2CreateBody(state->world_id, &body_def);
+		entity->min_pos = vec2f{-5.0f, -1.0f};
+		entity->max_pos = vec2f{5.0f, 5.0f};
+		b2CreatePolygonShape(entity->body_id, &shape_def, &polygon);
+
+		b2Body_SetLinearVelocity(entity->body_id, value_cast(b2Vec2, entity->velocity));
+	}
+
 #if 1
 	// clutter
 	{
@@ -238,10 +269,12 @@ static void game_reset(SDLContext* context, GameState* state)
 		shape_def_clutter.filter.categoryBits = COLLISION_FILTER_CLUTTER_SENSOR;
 		shape_def_clutter.filter.maskBits     = COLLISION_FILTER_PLAYER;
 
-		b2Polygon polygon_box = b2MakeBox(0.5f, 0.5f);
+		b2Circle circle = {{0.0f, 0.0f}, 0.5f};
 		for(int i = 0; i < 32; ++i)
 		{
 			Entity* entity = entity_create(state);
+			entity->min_pos = vec2f{-1000.0f, -1000.0f};
+			entity->max_pos = vec2f{1000.0f, 1000.0f};
 			entity->transform.scale = VEC2F_ONE;
 			
 			vec2f size = itu_lib_sprite_get_world_size(context, &entity->sprite, &entity->transform);
@@ -251,8 +284,10 @@ static void game_reset(SDLContext* context, GameState* state)
 			body_def.rotation = b2MakeRot(SDL_randf() * TAU);
 			body_def.angularVelocity = 1;
 			entity->body_id = b2CreateBody(state->world_id, &body_def);
-			b2CreatePolygonShape(entity->body_id, &shape_def, &polygon_box);
-			b2CreatePolygonShape(entity->body_id, &shape_def_clutter, &polygon_box);
+			b2CreateCircleShape(entity->body_id, &shape_def, &circle);
+    		b2CreateCircleShape(entity->body_id, &shape_def_clutter, &circle);
+			// b2CreatePolygonShape(entity->body_id, &shape_def, &polygon_box);
+			// b2CreatePolygonShape(entity->body_id, &shape_def_clutter, &polygon_box);
 			itu_lib_sprite_init(
 				&entity->sprite,
 				state->atlas,
@@ -291,7 +326,17 @@ static void game_update(SDLContext* context, GameState* state)
 					if(context->btn_isdown[BTN_TYPE_SPACE])
 						impulse.y = player_dynamic_jump_impulse;
 				}
-			
+				if (player->dash_cooldown == 0){
+					if(context->btn_isdown[BTN_TYPE_ACTION_0]){
+						impulse.x = -player_dynamic_dash_impulse;
+						player->dash_cooldown = 120;
+					}
+					if(context->btn_isdown[BTN_TYPE_ACTION_1]){
+						impulse.x = player_dynamic_dash_impulse;
+						player->dash_cooldown = 120;
+					}
+				}
+				if (player->dash_cooldown > 0) player->dash_cooldown-=1;
 				b2Body_ApplyForceToCenter(player->body_id, value_cast(b2Vec2, force), true);
 				b2Body_ApplyLinearImpulseToCenter(player->body_id, value_cast(b2Vec2, impulse), true);
 				break;
@@ -299,14 +344,14 @@ static void game_update(SDLContext* context, GameState* state)
 			case SIMULATION_TYPE_KINEMATIC:
 			{
 				vec2f velocity = player->velocity;
+				if(context->btn_isdown[BTN_TYPE_LEFT])
+					   velocity.x = -data->v_x;
+				 else if(context->btn_isdown[BTN_TYPE_RIGHT])
+					   velocity.x = data->v_x;
+				else
+					  velocity.x = 0;
 				if(data->grounded)
 				{
-					if(context->btn_isdown[BTN_TYPE_LEFT])
-		 	 	 		velocity.x = -data->v_x;
-		 			else if(context->btn_isdown[BTN_TYPE_RIGHT])
-		 	 	 		velocity.x = data->v_x;
-					else
-			 	 		velocity.x = 0;
 				 
 					if(context->btn_isjustpressed[BTN_TYPE_SPACE])
 					{
@@ -340,6 +385,26 @@ static void game_update(SDLContext* context, GameState* state)
 		entity->velocity = value_cast(vec2f, physics_vel); 
 		entity->transform.position = value_cast(vec2f, physics_pos);
 		entity->transform.rotation = b2Rot_GetAngle(physics_rot);
+
+		if(!B2_ID_EQUALS(entity->body_id, state->player->body_id)){
+			if (entity->min_pos.x >= entity->transform.position.x ){
+				b2Body_SetLinearVelocity(entity->body_id,b2Vec2{physics_vel.x*-1,physics_vel.y});
+				physics_vel = b2Body_GetLinearVelocity(entity->body_id);
+			}
+			if (entity->min_pos.y >= entity->transform.position.y ){
+				b2Body_SetLinearVelocity(entity->body_id,b2Vec2{physics_vel.x,physics_vel.y*-1});
+				physics_vel = b2Body_GetLinearVelocity(entity->body_id);
+			}
+			if (entity->max_pos.x <= entity->transform.position.x ){
+				b2Body_SetLinearVelocity(entity->body_id,b2Vec2{physics_vel.x*-1,physics_vel.y});
+				physics_vel = b2Body_GetLinearVelocity(entity->body_id);
+				
+			}
+			if (entity->max_pos.y <= entity->transform.position.y ){
+				b2Body_SetLinearVelocity(entity->body_id,b2Vec2{physics_vel.x,physics_vel.y*-1});
+			}
+		}
+
 	}
 
 	// player
@@ -387,6 +452,8 @@ static void game_update(SDLContext* context, GameState* state)
 		float amount = SDL_clamp(length_sq(state->player->velocity) * 2, 5, 15);
 		float spread = state->player_data.grounded ? PI / 4 : TAU;
 		clutter_apply_impulse_random(sensor_event->sensorShapeId, direction, amount, spread);
+
+		// game_reset(context, state);
 	}
 
 	{
