@@ -494,11 +494,6 @@ static void game_render(SDLContext* context, GameState* state)
 	SDL_RenderRect(context->renderer, NULL);
 }
 
-// Our state
-bool show_demo_window = true;
-bool show_another_window = false;
-ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
 int main(void)
 {
 	bool quit = false;
@@ -509,7 +504,7 @@ int main(void)
 	context.window_w = WINDOW_W;
 	context.window_h = WINDOW_H;
 
-	SDL_CreateWindowAndRenderer("ES03 - Coordinate Systems", WINDOW_W, WINDOW_H, 0, &window, &context.renderer);
+	SDL_CreateWindowAndRenderer("E04 - Physics", WINDOW_W, WINDOW_H, 0, &window, &context.renderer);
 	SDL_SetRenderDrawBlendMode(context.renderer, SDL_BLENDMODE_BLEND);
 	
 	// increase the zoom to make debug text more legible

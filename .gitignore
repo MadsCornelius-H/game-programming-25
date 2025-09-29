@@ -1,4 +1,4 @@
-out
+out*
 build
 .vs
 .vscode
@@ -6,3 +6,5 @@ build
 
 CMakeSettings.json
 .obsidian/
+imgui.ini
+build.sh
