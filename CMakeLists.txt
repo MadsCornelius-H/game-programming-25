@@ -17,7 +17,10 @@ add_subdirectory(lib/box2d)
 add_subdirectory(lib/imgui)
 
 # our libraries
+include_directories(lib/tinyxml)
 include_directories(lib/stb)
+add_library(tinyxml2 lib/tinyxml/tinyxml2.cpp)
+
 include_directories(lib/itu)
 
 # repo's executables
