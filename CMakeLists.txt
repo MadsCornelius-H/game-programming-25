@@ -18,6 +18,7 @@ add_subdirectory(lib/imgui)
 
 # our libraries
 include_directories(lib/tinyxml)
+include_directories(lib/easings_movement)
 include_directories(lib/stb)
 add_library(tinyxml2 lib/tinyxml/tinyxml2.cpp)
 

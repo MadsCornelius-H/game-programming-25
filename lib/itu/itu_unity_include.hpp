@@ -17,6 +17,10 @@
 #include <imgui/imgui_impl_sdlrenderer3.h>
 
 #include <box2d/box2d.h>
+#include <tinyxml2.h>
+#include <easings_movement.h>
+
+
 
 #include <itu_common.hpp>
 #include <itu_lib_engine.hpp>
