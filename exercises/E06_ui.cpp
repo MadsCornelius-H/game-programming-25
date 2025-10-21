@@ -16,6 +16,7 @@
 #define WINDOW_H         600
 
 #include <itu_unity_include.hpp>
+#include <iostream>
 
 #define ENTITY_COUNT 4
 
@@ -70,6 +71,14 @@ struct EX6_Sprite9Patch
 	color        tint;
 };
 register_component(EX6_Sprite9Patch)
+
+struct EX6_UIImageButton
+{
+	const char * label;
+	int times_clicked;
+
+};
+register_component(EX6_UIImageButton)
 
 static ITU_EntityId id_player;
 
@@ -175,6 +184,46 @@ void ex6_system_sprite9patch_render_camera(SDLContext* context, ITU_EntityId* en
 	}
 }
 
+SDL_FRect itu_lib_sprite9_get_screen_rect(SDLContext* context, EX6_Sprite9Patch* sprite, EX6_TransformScreen* transform)
+{
+	vec2f sprite_size_world;
+	sprite_size_world.x = sprite->size.x;
+	sprite_size_world.y = sprite->size.y;
+
+	SDL_FRect rect_dst;
+	rect_dst.w = transform->scale.x * sprite_size_world.x;
+	rect_dst.h = transform->scale.y * sprite_size_world.y;
+	rect_dst.x = transform->position.x - sprite->pivot.x * rect_dst.w;
+	rect_dst.y = transform->position.y - sprite->pivot.y * rect_dst.h;
+
+	return rect_dst;
+}
+
+void ex6_system_uiimagebutton(SDLContext* context, ITU_EntityId* entity_ids, int entity_ids_count){
+	bool is_clicked = ImGui::IsMouseClicked(0);
+
+	if (is_clicked){
+		for(int i = 0; i < entity_ids_count; ++i)
+		{
+			ITU_EntityId id = entity_ids[i];
+			EX6_TransformScreen* transform = entity_get_data(id, EX6_TransformScreen);
+			EX6_Sprite9Patch*    sprite = entity_get_data(id, EX6_Sprite9Patch);
+			EX6_UIImageButton*    button = entity_get_data(id, EX6_UIImageButton);
+
+			SDL_FRect rect = itu_lib_sprite9_get_screen_rect(context, sprite, transform);
+			
+			vec2f mouse_pos_screen = point_window_to_screen(context, context->mouse_pos);
+			vec2f rect_min = vec2f{rect.x, rect.y};
+			vec2f rect_max = vec2f{rect.x + rect.w, rect.y + rect.h};
+		
+			bool overlap = itu_lib_overlaps_point_rect(mouse_pos_screen, rect_min, rect_max);
+			if (overlap){
+				button->times_clicked +=1;
+			}
+		}
+	}
+}
+
 // ============================================================================================
 // COMPONENT DEBUG IR RENDER methods
 // ============================================================================================
@@ -234,6 +283,16 @@ void ex6_debug_ui_render_sprite9patch(SDLContext* context, void* data)
 	ImGui::ColorEdit4("tint", &data_sprite->tint.r);
 }
 
+void ex6_debug_ui_render_uiimagebutton(SDLContext* context, void* data){
+	EX6_UIImageButton* button = (EX6_UIImageButton*)data;
+
+
+	ImGui::Text("%s", button->label);
+	ImGui::Text("Times clicked :: %d", button->times_clicked);
+
+
+}
+
 // ============================================================================================
 // 
 // ============================================================================================
@@ -243,6 +302,7 @@ struct GameState
 	// SDL-allocated structures
 	SDL_Texture* atlas_space;
 	SDL_Texture* ui_healtbar;
+	SDL_Texture* ui_button;
 };
 
 void ex6_system_assign_player_target(SDLContext* context, ITU_EntityId* entity_ids, int entity_ids_count)
@@ -332,6 +392,8 @@ static void game_init(SDLContext* context, GameState* state)
 	// texture atlases
 	state->atlas_space = texture_create(context, "data/kenney/simpleSpace_tilesheet_2.png", SDL_SCALEMODE_LINEAR);
 	state->ui_healtbar = texture_create(context, "data/kenney/UI/bar_round_gloss_small_red.png", SDL_SCALEMODE_LINEAR);
+	state->ui_button = texture_create(context, "data/kenney/UI/button_rectangle_depth.png", SDL_SCALEMODE_LINEAR);
+
 
 	itu_sys_estorage_init(512);
 	itu_sys_physics_init(context);
@@ -341,12 +403,15 @@ static void game_init(SDLContext* context, GameState* state)
 	enable_component(EX6_HealthRenderer);
 	enable_component(EX6_TransformScreen);
 	enable_component(EX6_Sprite9Patch);
+	enable_component(EX6_UIImageButton);
 
 	add_component_debug_ui_render(EX6_PlayerData, ex6_debug_ui_render_playerdata);
 	add_component_debug_ui_render(EX6_Health, ex6_debug_ui_render_health);
 	add_component_debug_ui_render(EX6_HealthRenderer, ex6_debug_ui_render_healthrenderer);
 	add_component_debug_ui_render(EX6_TransformScreen, ex6_debug_ui_render_transformscreen);
 	add_component_debug_ui_render(EX6_Sprite9Patch, ex6_debug_ui_render_sprite9patch);
+	add_component_debug_ui_render(EX6_UIImageButton, ex6_debug_ui_render_uiimagebutton);
+
 
 	itu_sys_estorage_tag_set_debug_name(TAG_CAMERA_TARGET, "camera target");
 	itu_sys_estorage_tag_set_debug_name(TAG_ASTEROID, "asteroid");
@@ -357,6 +422,7 @@ static void game_init(SDLContext* context, GameState* state)
 	add_system(ex6_system_health                    , component_mask(EX6_HealthRenderer)  | component_mask(EX6_Sprite9Patch), 0);
 	add_system(ex6_system_sprite_render_camera      , component_mask(EX6_TransformScreen) | component_mask(Sprite)          , 0);
 	add_system(ex6_system_sprite9patch_render_camera, component_mask(EX6_TransformScreen) | component_mask(EX6_Sprite9Patch), 0);
+	add_system(ex6_system_uiimagebutton				, component_mask(EX6_UIImageButton)	  | component_mask(EX6_TransformScreen) | component_mask(EX6_Sprite9Patch), 0);
 }
 
 static void game_reset(SDLContext* context, GameState* state)
@@ -438,10 +504,13 @@ static void game_reset(SDLContext* context, GameState* state)
 		ShapeData shape_data;
 		shape_data.shape_id = b2CreateCircleShape(physics_data.body_id, &shape_def, &circle);
 
+		EX6_UIImageButton button;
+
 		entity_add_component(id, Transform,   transform);
 		entity_add_component(id, Sprite,      sprite);
 		entity_add_component(id, PhysicsStaticData, physics_data);
 		entity_add_component(id, ShapeData, shape_data);
+		entity_add_component(id, EX6_UIImageButton, button);
 		itu_entity_tag_add(id, TAG_ASTEROID);
 
 	}
@@ -471,6 +540,33 @@ static void game_reset(SDLContext* context, GameState* state)
 		entity_add_component(id, EX6_TransformScreen, transform);
 		entity_add_component(id, EX6_Sprite9Patch, sprite);
 		entity_add_component(id, EX6_HealthRenderer, renderer);
+	}
+
+	// Buttons
+	{
+		ITU_EntityId id = itu_entity_create();
+		itu_entity_set_debug_name(id, "UI-button");
+		EX6_TransformScreen transform = { 0 };
+		transform.scale = VEC2F_ONE;
+		transform.position = { 200, 180 };
+
+		EX6_Sprite9Patch   sprite;
+		sprite.rect = { 0, 0, 192, 64 };
+		sprite.texture = state->ui_button;
+		sprite.size = { 100, 50 };
+		sprite.margins_hor = { 8, 8 };
+		sprite.margins_ver = { 0, 0 };
+		sprite.pivot.x = 0;
+		sprite.pivot.y = 0.5f;
+		sprite.tint = COLOR_WHITE;
+
+		EX6_UIImageButton button;
+		button.label = "Button for counting";
+		button.times_clicked = 0;
+
+		entity_add_component(id, EX6_TransformScreen, transform);
+		entity_add_component(id, EX6_Sprite9Patch, sprite);
+		entity_add_component(id, EX6_UIImageButton, button);
 	}
 }
 
